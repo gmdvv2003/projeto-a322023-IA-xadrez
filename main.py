@@ -263,7 +263,7 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
     models_results = {}
 
     for name, model in candidate_models.items():
-        if not skip_grid_search_cv and not name in disabled_grid_search_cv_for_models :
+        if not skip_grid_search_cv and not name in disabled_grid_search_cv_for_models:
             print(f"\nExecutando GridSearchCV no modelo {name}")
 
             # Benchmaking do GridSearchCV
