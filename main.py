@@ -82,7 +82,7 @@ disabled_grid_search_cv_for_models = [
     "DecisionTreeClassifier"
     ]
 
-def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: str=None, black_match_up_id: str=None, skip_grid_search_cv: bool=False, random_white_match_up_id:bool =False, random_black_match_up_id: bool=False) -> [bool, str | dict]:
+def main(skip_games_table_modification_prompt=False, white_match_up_id=None, black_match_up_id=None, skip_grid_search_cv=False, random_white_match_up_id=False, random_black_match_up_id=False, skip_best_samples_creation=False):
     # Garante a existência do arquivo games-modified.csv caso o mesmo não exista
     try:
         with open("./games-modified.csv", mode="x") as file:
@@ -96,7 +96,7 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
     games_table = pandas.read_csv("games-modified.csv")
 
     # Função utilizada para gerar um perfil do jogador, contendo algumas estatísticas
-    def generate_player_profile_until(player_id: str, games_count: int) -> dict:
+    def generate_player_profile_until(player_id, games_count):
         # Pega os primeiros n jogos
         player_games_table = games_table.head(1 + games_count)
 
@@ -116,20 +116,17 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
         # Calcula a média do rating do jogador
         average_rating = sum([row["white_rating"] if row["white_id"] == player_id else row["black_rating"] for _, row in player_games_table.iterrows()])/total_games_played if total_games_played > 0 else 1
 
-        # Calculate a média de duração de partidas do jogador
-        average_duration = sum([duration for duration in player_games_table["game_duration"]])/total_games_played if total_games_played > 0 else 1
-
         return {
+            "total_wins": [total_wins],
+            "total_draws": [total_draws],
             "total_games_played": [total_games_played],
             "win_rate": [win_rate],
             "average_rating": [average_rating],
-            "average_duration": [average_duration],
         }
 
     if not skip_games_table_modification_prompt and input("Você deseja atualizar e formatar os dados do arquivo? (S/N) ").lower() == "s":
-        # Motivo pela qual estamos utilizando somente os 10770 últimos valores é porque depois disso eles
-        # Começam a ser representados em notação científica, assim então perdendo sua precisão númerica
-        games_table = pandas.read_csv("games.csv").tail(10770).reset_index(drop=True)
+        # Lê o arquivo dos jogos
+        games_table = pandas.read_csv("games.csv")
 
         # Retira as colunas que não tem relevância
         games_table = games_table.drop(columns=[
@@ -143,23 +140,14 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
             "opening_ply"
         ])
 
-        # Cria as novas tabelas que irão utilizar de dados produzidos
-        games_table = games_table.assign(game_duration=[0]*len(games_table)) # Duração da partida
-
         # Todas os dados das tabelas abaixo são gerados POR partida 
         games_table = games_table.assign(white_total_games_played=[0]*len(games_table)) # Total de jogos pelo jogador branco
         games_table = games_table.assign(white_win_rate=[0]*len(games_table)) # Taxa de vitória do jogador branco
         games_table = games_table.assign(white_average_rating=[0]*len(games_table)) # Média do rating do jogador branco
-        games_table = games_table.assign(white_average_duration=[0]*len(games_table)) # Média da duração da partida do jogador branco
 
         games_table = games_table.assign(black_total_games_played=[0]*len(games_table)) # Total de jogos pelo jogador preto
         games_table = games_table.assign(black_win_rate=[0]*len(games_table)) # Taxa de vitória do jogador preto
         games_table = games_table.assign(black_average_rating=[0]*len(games_table)) # Média do rating do jogador preto
-        games_table = games_table.assign(black_average_duration=[0]*len(games_table)) # Média da duração da partida do jogador preto
-
-        # Conversão das tabelas "created_at" e "last_move_at"
-        games_table["created_at"] = pandas.to_datetime(games_table["created_at"]/1000, unit="s", origin="unix")
-        games_table["last_move_at"] = pandas.to_datetime(games_table["last_move_at"]/1000, unit="s", origin="unix")
 
         for row_index in range(0, len(games_table)):
             # Benchmarking
@@ -167,9 +155,6 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
 
             # Linha no índice row_index contendo os dados da partida
             game_data = games_table.loc[row_index]
-
-            # Duração da partida (Por algum motivo a conversão do pandas retorna valores errados?)
-            games_table.at[row_index, "game_duration"] = pandas.Timedelta(game_data["last_move_at"] - game_data["created_at"]).seconds
 
             # Perfil dos jogadores
             white_profile = generate_player_profile_until(game_data["white_id"], row_index)
@@ -198,6 +183,44 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
             _ = games_table["__modified__"]
         except Exception:
             return [False, "Você deve atualizar e formatar o arquivo para para prosseguir."]
+
+    if not skip_best_samples_creation:
+        print("Gerando lista das melhores amostras...")
+
+        # Lista somente os últimos jogos de cada jogador
+        best_samples = pandas.DataFrame(columns=["id", "rating", "win_rate", "average_rating", "total_games_played", "total_wins", "total_draws"])
+        
+        for index, row in games_table.iterrows():
+            white_id = row["white_id"]
+            black_id = row["black_id"]
+
+            white_profile = generate_player_profile_until(white_id, len(games_table))
+            black_profile = generate_player_profile_until(black_id, len(games_table))
+            
+            # Atualiza os dados do jogador branco
+            if (best_samples["id"] == white_id).any():
+                best_samples[best_samples["id"] == white_id] = [white_id, row["white_rating"], row["white_win_rate"], row["white_average_rating"], row["white_total_games_played"], white_profile["total_wins"][0], white_profile["total_draws"][0]]
+            else:
+                best_samples.loc[index] = [white_id, row["white_rating"], row["white_win_rate"], row["white_average_rating"], row["white_total_games_played"], white_profile["total_wins"][0], white_profile["total_draws"][0]]
+
+            # Atualiza os dados do jogador preto
+            if (best_samples["id"] == black_id).any():
+                best_samples[best_samples["id"] == black_id] = [black_id, row["black_rating"], row["black_win_rate"], row["black_average_rating"], row["black_total_games_played"], black_profile["total_wins"][0], black_profile["total_draws"][0]]
+            else:
+                best_samples.loc[index] = [black_id, row["black_rating"], row["black_win_rate"], row["black_average_rating"], row["black_total_games_played"], black_profile["total_wins"][0], black_profile["total_draws"][0]]
+
+        print("Filtrando lista das melhores amostras...")
+
+        # Filtra a lista para conter somente jogadores com mais de 10 jogos
+        for index, row in best_samples.iterrows():
+            if row["total_games_played"] < 10:
+                best_samples = best_samples.drop(index=index)
+
+        # Ordena a lista dos melhores amostras pelo rating
+        best_samples = best_samples.sort_values(by=["total_games_played"], ascending=False)
+
+        # Salva a lista das melhores amostras em um arquivo CSV
+        best_samples.to_csv("best-samples.csv", index=False)
 
     if random_white_match_up_id:
         white_match_up_id = games_table.sample()["white_id"].iloc[0]
@@ -231,13 +254,13 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
     games_table["black_id_label"] = ids_label.transform(games_table["black_id"])
 
     # Pega as tabelas que contêm dados relevantes
-    features = ["white_rating", "black_rating", "white_total_games_played", "white_win_rate", "white_average_rating", "white_average_duration", "black_total_games_played", "black_win_rate", "black_average_rating", "black_average_duration", "white_id_label", "black_id_label"]
+    features = ["white_rating", "black_rating", "white_total_games_played", "white_win_rate", "white_average_rating", "black_total_games_played", "black_win_rate", "black_average_rating", "white_id_label", "black_id_label"]
     target = ["winner"]
 
-    # Divide os dados em trainamento e teste
+    # Divide os dados em treinamento e teste
     x_train, x_test, y_train, y_test = train_test_split(games_table[features], games_table[target], test_size=TEST_SPLIT_SIZE, random_state=RANDOM_STATE_SEED)
 
-    # Tabela que contêm o jogo cujo resultado deve ser calculados
+    # Tabela que contêm o jogo cujo resultado deve ser calculado
     game_to_predict = pandas.DataFrame({
         "white_rating": white_profile["average_rating"],
         "black_rating": black_profile["average_rating"],
@@ -246,13 +269,11 @@ def main(skip_games_table_modification_prompt: bool=False, white_match_up_id: st
         "white_total_games_played": white_profile["total_games_played"],
         "white_win_rate": white_profile["win_rate"],
         "white_average_rating": white_profile["average_rating"],
-        "white_average_duration": white_profile["average_duration"],
 
         # Perfil do jogador preto
         "black_total_games_played": black_profile["total_games_played"],
         "black_win_rate": black_profile["win_rate"],
         "black_average_rating": black_profile["average_rating"],
-        "black_average_duration": black_profile["average_duration"],
 
         # IDs em formato de inteiro dos jogados branco e preto
         "white_id_label": [ids_label.transform([white_match_up_id])[0]],
@@ -357,7 +378,7 @@ if __name__ == "__main__":
         print("O arquivo \"games.csv\" não foi encontrado no diretório do projeto.")
     else:
         # Utilizado para facilitar a obtenção dos parâmetros passados
-        options_getter = GetOptionsHelper(["mskip", "w=", "b=", "rw", "rb", "gskip", "hp"])
+        options_getter = GetOptionsHelper(["mskip", "w=", "b=", "rw", "rb", "gskip", "sskip", "hp"])
 
         # Argumento para pular o prompt de modificação do arquivo games-modified.csv
         skip_games_table_modification_prompt = options_getter.get("--mskip", empty_value=True)
@@ -373,6 +394,9 @@ if __name__ == "__main__":
         # Argumento para pular a execução do GridSearchCV nos modelos
         skip_grid_search_cv = options_getter.get("--gskip", empty_value=True)
 
+        # Argumento para pular a criação do arquivo das melhores amostras
+        skip_best_samples_creation = options_getter.get("--sskip", empty_value=True)
+
         # Executa o código com os parâmetros digitados
         success, execution_result = main(
             skip_games_table_modification_prompt=skip_games_table_modification_prompt,
@@ -380,7 +404,9 @@ if __name__ == "__main__":
             black_match_up_id=black_match_up_id,
             random_white_match_up_id=random_white_match_up_id,
             random_black_match_up_id=random_black_match_up_id,
-            skip_grid_search_cv=skip_grid_search_cv)
+            skip_grid_search_cv=skip_grid_search_cv,
+            skip_best_samples_creation=skip_best_samples_creation
+            )
         
         if not success:
             print(f"Algo de errado ocorreu enquanto o código era executado: {execution_result}")

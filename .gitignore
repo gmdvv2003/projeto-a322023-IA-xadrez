@@ -1,0 +1,6 @@
+# Ignora os arquivos do dataset do projeto
+*.csv
+*.xlsx
+
+# Ignora as pastas __pycache__
+__pycache__/

@@ -6,7 +6,7 @@ import time
 # Total de testers a serem executados
 TOTAL_TESTS = int(GetOptionsHelper(["t="]).get("--t", default_value=1))
 
-def main() -> None:
+def main():
     # Benchmarking dos tests em geral
     tests_start_time = time.time()
 

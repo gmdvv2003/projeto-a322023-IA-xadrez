@@ -4,7 +4,7 @@ import re
 import subprocess
 
 # Função utilizada para rodar um jogo em main.py e pegar o valor retornado
-def execute_game(parameters: list[str] = []) -> [bool, dict | None]:
+def execute_game(parameters = []):
     # Caminho absoluto até o caminho do arquivo main.py
     working_dictory = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../"))
 
