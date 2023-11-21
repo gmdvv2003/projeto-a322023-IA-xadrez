@@ -12,6 +12,9 @@ from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassif
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
 
+# Quantidade de amostras para utilizar no teste de hipótese
+HYPOTHESIS_TEST_SAMPLE_SIZE = 30
+
 # Porcentagem na qual os dados devem ser divididos em treino e teste
 TEST_SPLIT_SIZE = 0.2
 
@@ -221,6 +224,45 @@ def main(skip_games_table_modification_prompt=False, white_match_up_id=None, bla
 
         # Salva a lista das melhores amostras em um arquivo CSV
         best_samples.to_csv("best-samples.csv", index=False)
+
+    best_samples = pandas.read_csv("best-samples.csv")
+
+    top_n_players = best_samples.head(HYPOTHESIS_TEST_SAMPLE_SIZE)
+    random_n_players = best_samples[~best_samples["id"].isin(top_n_players["id"])].sample(HYPOTHESIS_TEST_SAMPLE_SIZE)
+
+    aSampleAverage = 0
+    bSampleAverage = 0
+
+    for _, row in top_n_players.iterrows():
+        aSampleAverage += row["total_wins"]
+
+    for _, row in random_n_players.iterrows():
+        bSampleAverage += row["total_wins"]
+
+    aSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
+    bSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
+
+    aNormalDistribution = 0
+    bNormalDistribution = 0
+
+    for _, row in top_n_players.iterrows():
+        aNormalDistribution += (row["total_wins"] - aSampleAverage) ** 2
+
+    for _, row in random_n_players.iterrows():
+        bNormalDistribution += (row["total_wins"] - bSampleAverage) ** 2
+
+    aNormalDistribution = (aNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
+    bNormalDistribution = (bNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
+    
+    testValue = (aSampleAverage - bSampleAverage) / (((aNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE + (bNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE)) ** 0.5
+
+    print(f"\nMédia de vitórias dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aSampleAverage}")
+    print(f"Média de vitórias dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bSampleAverage}")
+
+    print(f"Desvio padrão dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aNormalDistribution}")
+    print(f"Desvio padrão dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bNormalDistribution}")
+
+    print(f"Valor do teste: {testValue}\n")
 
     if random_white_match_up_id:
         white_match_up_id = games_table.sample()["white_id"].iloc[0]
