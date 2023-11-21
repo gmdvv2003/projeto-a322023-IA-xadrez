@@ -85,7 +85,7 @@ disabled_grid_search_cv_for_models = [
     "DecisionTreeClassifier"
     ]
 
-def main(skip_games_table_modification_prompt=False, white_match_up_id=None, black_match_up_id=None, skip_grid_search_cv=False, random_white_match_up_id=False, random_black_match_up_id=False, skip_best_samples_creation=False):
+def main(skip_games_table_modification_prompt=False, white_match_up_id=None, black_match_up_id=None, skip_grid_search_cv=False, random_white_match_up_id=False, random_black_match_up_id=False, skip_best_samples_creation=False, calculate_hypothesis_test=False):
     # Garante a existência do arquivo games-modified.csv caso o mesmo não exista
     try:
         with open("./games-modified.csv", mode="x") as file:
@@ -225,44 +225,55 @@ def main(skip_games_table_modification_prompt=False, white_match_up_id=None, bla
         # Salva a lista das melhores amostras em um arquivo CSV
         best_samples.to_csv("best-samples.csv", index=False)
 
-    best_samples = pandas.read_csv("best-samples.csv")
+    if calculate_hypothesis_test:
+        try:
+            with open("./best-samples.csv") as file:
+                pass
+        except Exception as exception:
+            return [False, "Você deve gerar a lista das melhores amostras para prosseguir."]
 
-    top_n_players = best_samples.head(HYPOTHESIS_TEST_SAMPLE_SIZE)
-    random_n_players = best_samples[~best_samples["id"].isin(top_n_players["id"])].sample(HYPOTHESIS_TEST_SAMPLE_SIZE)
+        best_samples = pandas.read_csv("best-samples.csv")
 
-    aSampleAverage = 0
-    bSampleAverage = 0
+        # Lista dos top n jogadores e n jogadores aleatórios
+        top_n_players = best_samples.head(HYPOTHESIS_TEST_SAMPLE_SIZE)
+        random_n_players = best_samples[~best_samples["id"].isin(top_n_players["id"])].sample(HYPOTHESIS_TEST_SAMPLE_SIZE)
 
-    for _, row in top_n_players.iterrows():
-        aSampleAverage += row["total_wins"]
+        # Média das amostras
+        aSampleAverage = 0
+        bSampleAverage = 0
 
-    for _, row in random_n_players.iterrows():
-        bSampleAverage += row["total_wins"]
+        for _, row in top_n_players.iterrows():
+            aSampleAverage += row["total_wins"]
 
-    aSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
-    bSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
+        for _, row in random_n_players.iterrows():
+            bSampleAverage += row["total_wins"]
 
-    aNormalDistribution = 0
-    bNormalDistribution = 0
+        aSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
+        bSampleAverage /= HYPOTHESIS_TEST_SAMPLE_SIZE
 
-    for _, row in top_n_players.iterrows():
-        aNormalDistribution += (row["total_wins"] - aSampleAverage) ** 2
+        # Desvio padrão das amostras
+        aNormalDistribution = 0
+        bNormalDistribution = 0
 
-    for _, row in random_n_players.iterrows():
-        bNormalDistribution += (row["total_wins"] - bSampleAverage) ** 2
+        for _, row in top_n_players.iterrows():
+            aNormalDistribution += (row["total_wins"] - aSampleAverage) ** 2
 
-    aNormalDistribution = (aNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
-    bNormalDistribution = (bNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
-    
-    testValue = (aSampleAverage - bSampleAverage) / (((aNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE + (bNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE)) ** 0.5
+        for _, row in random_n_players.iterrows():
+            bNormalDistribution += (row["total_wins"] - bSampleAverage) ** 2
 
-    print(f"\nMédia de vitórias dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aSampleAverage}")
-    print(f"Média de vitórias dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bSampleAverage}")
+        aNormalDistribution = (aNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
+        bNormalDistribution = (bNormalDistribution / (HYPOTHESIS_TEST_SAMPLE_SIZE - 1)) ** 0.5
+        
+        # Valor de teste
+        testValue = (aSampleAverage - bSampleAverage) / (((aNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE + (bNormalDistribution ** 2) / HYPOTHESIS_TEST_SAMPLE_SIZE)) ** 0.5
 
-    print(f"Desvio padrão dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aNormalDistribution}")
-    print(f"Desvio padrão dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bNormalDistribution}")
+        print(f"\nMédia de vitórias dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aSampleAverage}")
+        print(f"Média de vitórias dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bSampleAverage}")
 
-    print(f"Valor do teste: {testValue}\n")
+        print(f"Desvio padrão dos top {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores: {aNormalDistribution}")
+        print(f"Desvio padrão dos {HYPOTHESIS_TEST_SAMPLE_SIZE} jogadores aleatórios: {bNormalDistribution}")
+
+        print(f"Valor do teste: {testValue}\n")
 
     if random_white_match_up_id:
         white_match_up_id = games_table.sample()["white_id"].iloc[0]
@@ -420,7 +431,7 @@ if __name__ == "__main__":
         print("O arquivo \"games.csv\" não foi encontrado no diretório do projeto.")
     else:
         # Utilizado para facilitar a obtenção dos parâmetros passados
-        options_getter = GetOptionsHelper(["mskip", "w=", "b=", "rw", "rb", "gskip", "sskip", "hp"])
+        options_getter = GetOptionsHelper(["mskip", "w=", "b=", "rw", "rb", "gskip", "sskip", "cht", "hp"])
 
         # Argumento para pular o prompt de modificação do arquivo games-modified.csv
         skip_games_table_modification_prompt = options_getter.get("--mskip", empty_value=True)
@@ -439,6 +450,9 @@ if __name__ == "__main__":
         # Argumento para pular a criação do arquivo das melhores amostras
         skip_best_samples_creation = options_getter.get("--sskip", empty_value=True)
 
+        # Argumento para calcular a hipoótese de teste
+        calculate_hypothesis_test = options_getter.get("--cht", empty_value=True)
+
         # Executa o código com os parâmetros digitados
         success, execution_result = main(
             skip_games_table_modification_prompt=skip_games_table_modification_prompt,
@@ -447,7 +461,8 @@ if __name__ == "__main__":
             random_white_match_up_id=random_white_match_up_id,
             random_black_match_up_id=random_black_match_up_id,
             skip_grid_search_cv=skip_grid_search_cv,
-            skip_best_samples_creation=skip_best_samples_creation
+            skip_best_samples_creation=skip_best_samples_creation,
+            calculate_hypothesis_test=calculate_hypothesis_test
             )
         
         if not success:
