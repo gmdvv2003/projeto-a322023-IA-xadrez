@@ -450,7 +450,7 @@ if __name__ == "__main__":
         # Argumento para pular a criação do arquivo das melhores amostras
         skip_best_samples_creation = options_getter.get("--sskip", empty_value=True)
 
-        # Argumento para calcular a hipoótese de teste
+        # Argumento para calcular a hipótese de teste
         calculate_hypothesis_test = options_getter.get("--cht", empty_value=True)
 
         # Executa o código com os parâmetros digitados
